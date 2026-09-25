@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automatic Mind Map Generator</title>
+  
+  <!-- โหลด Vis-Network สำหรับวาด Mind Map อัตโนมัติ -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  
+  <!-- โหลด Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Prompt&family=Sarabun&family=Chakra+Petch&display=swap" rel="stylesheet">
+  
+  <!-- โหลด ไลบรารีสำหรับ Export เป็น PNG และ PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; font-family: 'Prompt', sans-serif; }
+    body { margin: 0; display: flex; height: 100vh; background-color: #f4f6f8; }
+    
+    /* แถบควบคุมด้านข้าง */
+    #sidebar {
+      width: 320px;
+      padding: 20px;
+      background: #ffffff;
+      box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      overflow-y: auto;
+      z-index: 10;
+    }
+    
+    h2 { margin-top: 0; color: #333; font-size: 1.2rem; }
+    .group { display: flex; flex-direction: column; gap: 5px; }
+    label { font-size: 0.85rem; color: #666; font-weight: bold; }
+    
+    input, select, button {
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    
+    button {
+      background-color: #4A90E2;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    button:hover { background-color: #357ABD; }
+    
+    .btn-export {
+      background-color: #2ED573;
+    }
+    .btn-export:hover {
+      background-color: #26AF5F;
+    }
+
+    .btn-pdf {
+      background-color: #FF4757;
+    }
+    .btn-pdf:hover {
+      background-color: #D63031;
+    }
+
+    .sticker-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 5px;
+      background: #f0f0f0;
+      padding: 8px;
+      border-radius: 6px;
+    }
+    .sticker-btn {
+      padding: 5px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 1.2rem;
+      border-radius: 4px;
+      background: white;
+    }
+    .sticker-btn:hover { background: #e0e0e0; }
+
+    /* พื้นที่แสดง Mind Map */
+    #mynetwork {
+      flex: 1;
+      height: 100%;
+      background-color: #ffffff;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="sidebar">
+    <h2>ตั้งค่า & เพิ่มข้อมูล</h2>
+    
+    <!-- การตั้งค่ารูปแบบล่วงหน้า -->
+    <div class="group">
+      <label>1. เลือกโหนดแม่ (Parent Node):</label>
+      <select id="parentNodeSelect">
+        <option value="1">โหนดหลัก (Main Idea)</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <label>2. เลือกสีโหนด:</label>
+      <input type="color" id="nodeColor" value="#97C2FC">
+    </div>
+
+    <div class="group">
+      <label>3. เลือกฟอนต์:</label>
+      <select id="fontSelect">
+        <option value="Prompt">Prompt</option>
+        <option value="Sarabun">Sarabun</option>
+        <option value="Chakra Petch">Chakra Petch</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <label>4. เลือกสติ๊กเกอร์/ไอคอน:</label>
+      <div class="sticker-grid">
+        <div class="sticker-btn" onclick="addSticker('💡')">💡</div>
+        <div class="sticker-btn" onclick="addSticker('⭐')">⭐</div>
+        <div class="sticker-btn" onclick="addSticker('📌')">📌</div>
+        <div class="sticker-btn" onclick="addSticker('🔥')">🔥</div>
+        <div class="sticker-btn" onclick="addSticker('✅')">✅</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <label>5. เลือกรูปแบบเส้น:</label>
+      <select id="edgeStyleSelect" onchange="updateLayoutOptions()">
+        <option value="cubicBezier">เส้นโค้ง (Smooth Curve)</option>
+        <option value="straight">เส้นตรง (Straight)</option>
+      </select>
+    </div>
+
+    <hr style="width:100%; border:0.5px solid #eee;">
+
+    <!-- ใส่ข้อมูล -->
+    <div class="group">
+      <label>ข้อความที่ต้องการใส่:</label>
+      <input type="text" id="nodeText" placeholder="พิมพ์เนื้อหาที่นี่...">
+    </div>
+
+    <button onclick="addNode()">+ เพิ่มลง Mind Map อัตโนมัติ</button>
+
+    <hr style="width:100%; border:0.5px solid #eee;">
+
+    <!-- ปุ่ม Export -->
+    <div class="group" style="gap: 10px;">
+      <label>ส่งออกไฟล์ (Export):</label>
+      <button class="btn-export" onclick="exportPNG()">📷 ดาวน์โหลดเป็นรูปภาพ (PNG)</button>
+      <button class="btn-pdf" onclick="exportPDF()">📄 ดาวน์โหลดเป็นเอกสาร (PDF)</button>
+    </div>
+  </div>
+
+  <div id="mynetwork"></div>
+
+  <script>
+    let nodeIdCounter = 2;
+    let selectedSticker = "";
+
+    // ข้อมูลเริ่มต้น
+    const nodes = new vis.DataSet([
+      { id: 1, label: '💡 หัวข้อหลัก', color: { background: '#FFD166' }, font: { face: 'Prompt', size: 20 } }
+    ]);
+
+    const edges = new vis.DataSet([]);
+
+    const container = document.getElementById('mynetwork');
+    const data = { nodes: nodes, edges: edges };
+
+    // ตัวเลือกการจัดวางอัตโนมัติแบบกิ่งไม้ (Hierarchical Layout)
+    const options = {
+      layout: {
+        hierarchical: {
+          direction: 'LR', // LR = จากซ้ายไปขวา
+          sortMethod: 'directed',
+          nodeSpacing: 150,
+          levelSeparation: 200
+        }
+      },
+      physics: false,
+      edges: {
+        smooth: { type: 'cubicBezier', forceDirection: 'horizontal' },
+        color: { color: '#848484' },
+        width: 2
+      },
+      nodes: {
+        shape: 'box',
+        margin: 12,
+        borderWidth: 2,
+        shadow: true
+      }
+    };
+
+    let network = new vis.Network(container, data, options);
+
+    function addSticker(sticker) {
+      selectedSticker = sticker;
+      alert(`เลือกสติ๊กเกอร์: ${sticker} แล้ว (จะใส่อยู่หน้าข้อความ)`);
+    }
+
+    function addNode() {
+      const textInput = document.getElementById('nodeText');
+      const labelText = textInput.value.trim();
+      
+      if (!labelText) {
+        alert("กรุณาใส่ข้อความก่อนครับ");
+        return;
+      }
+
+      const parentId = parseInt(document.getElementById('parentNodeSelect').value);
+      const color = document.getElementById('nodeColor').value;
+      const font = document.getElementById('fontSelect').value;
+
+      const fullLabel = selectedSticker ? `${selectedSticker} ${labelText}` : labelText;
+
+      // เพิ่ม Node ใหม่
+      nodes.add({
+        id: nodeIdCounter,
+        label: fullLabel,
+        color: { background: color },
+        font: { face: font, size: 14 }
+      });
+
+      // เชื่อม Node เข้ากับ Parent อัตโนมัติ
+      edges.add({ from: parentId, to: nodeIdCounter });
+
+      // อัปเดต Dropdown ให้สามารถเลือกโหนดใหม่เป็นโหนดแม่ได้
+      const select = document.getElementById('parentNodeSelect');
+      const option = document.createElement('option');
+      option.value = nodeIdCounter;
+      option.text = `-> ${fullLabel}`;
+      select.add(option);
+
+      // รีเซ็ตค่าการคีย์
+      textInput.value = '';
+      selectedSticker = "";
+      nodeIdCounter++;
+    }
+
+    function updateLayoutOptions() {
+      const style = document.getElementById('edgeStyleSelect').value;
+      network.setOptions({
+        edges: {
+          smooth: style === 'cubicBezier' ? { type: 'cubicBezier', forceDirection: 'horizontal' } : false
+        }
+      });
+    }
+
+    // ฟังก์ชัน Export เป็นรูปภาพ PNG
+    function exportPNG() {
+      network.fit({
+        animation: false
+      });
+
+      setTimeout(() => {
+        html2canvas(container).then(canvas => {
+          const link = document.createElement('a');
+          link.download = 'mindmap.png';
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        });
+      }, 500);
+    }
+
+    // ฟังก์ชัน Export เป็นไฟล์ PDF
+    function exportPDF() {
+      network.fit({
+        animation: false
+      });
+
+      setTimeout(() => {
+        html2canvas(container).then(canvas => {
+          const imgData = canvas.toDataURL('image/png');
+          const { jsPDF } = window.jspdf;
+          
+          // สร้าง PDF แนวนอน (Landscape)
+          const pdf = new jsPDF('l', 'mm', 'a4');
+          const imgProps = pdf.getImageProperties(imgData);
+          const pdfWidth = pdf.internal.pageSize.getWidth();
+          const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+          pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+          pdf.save('mindmap.pdf');
+        });
+      }, 500);
+    }
+  </script>
+</body>
+</html>
